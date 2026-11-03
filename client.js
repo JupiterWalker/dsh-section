@@ -70,6 +70,8 @@ window.__ModuleLoader__.load({
 			'sidebar.empty': 'No sessions',
 			'sidebar.more': 'More actions',
 			'sidebar.sessionMenu': 'Session actions',
+			'sidebar.running': 'Running',
+			'sidebar.unread': 'Unread',
 			'sidebar.projectMenu': 'Project actions',
 			'sidebar.archive': 'Archive',
 			'sidebar.archiveProject': 'Archive project',
@@ -133,6 +135,8 @@ window.__ModuleLoader__.load({
 			'sidebar.empty': '没有会话',
 			'sidebar.more': '更多操作',
 			'sidebar.sessionMenu': '会话操作',
+			'sidebar.running': '处理中',
+			'sidebar.unread': '未读',
 			'sidebar.projectMenu': '项目操作',
 			'sidebar.archive': '归档',
 			'sidebar.archiveProject': '归档项目',
@@ -159,7 +163,7 @@ window.__ModuleLoader__.load({
 		/* ------------------------------ state ------------------------------ */
 
 		/** `sidebar` remembers which browser the left column shows; `collapsed` folds groups. */
-		const EMPTY_STATE = { sections: [], assignments: {}, sidebar: 'host', collapsed: {} };
+		const EMPTY_STATE = { sections: [], assignments: {}, sidebar: 'host', collapsed: {}, seen: {} };
 
 		function isRecord(value) {
 			return typeof value === 'object' && value !== null;
@@ -216,8 +220,14 @@ window.__ModuleLoader__.load({
 					if (key !== '' && value === true) collapsed[key] = true;
 				}
 			}
+			const seen = {};
+			if (isRecord(raw) && isRecord(raw.seen)) {
+				for (const [sessionId, value] of Object.entries(raw.seen)) {
+					if (sessionId !== '' && typeof value === 'number' && Number.isFinite(value)) seen[sessionId] = value;
+				}
+			}
 			const sidebar = isRecord(raw) && raw.sidebar === 'sections' ? 'sections' : 'host';
-			return { sections, assignments, sidebar, collapsed };
+			return { sections, assignments, sidebar, collapsed, seen };
 		}
 
 		function loadState() {
@@ -345,6 +355,38 @@ window.__ModuleLoader__.load({
 			setState({ ...state, collapsed });
 		}
 
+		/** Remember that the operator has looked at this session up to `stamp`. */
+		function markSeen(sessionId, stamp) {
+			if (sessionId === '' || typeof stamp !== 'number' || stamp <= 0) return;
+			const known = state.seen[sessionId];
+			if (typeof known === 'number' && known >= stamp) return;
+			setState({ ...state, seen: { ...state.seen, [sessionId]: stamp } });
+		}
+
+		/** Baseline every session once, and keep the open conversation marked read. */
+		function syncSeen(snapshot) {
+			if (!isRecord(snapshot) || !Array.isArray(snapshot.ids)) return;
+			const seen = { ...state.seen };
+			let changed = false;
+			for (const sessionId of snapshot.ids) {
+				if (typeof seen[sessionId] === 'number') continue;
+				const stamp = sessionStamp(sessionId);
+				if (stamp > 0) {
+					seen[sessionId] = stamp;
+					changed = true;
+				}
+			}
+			if (typeof snapshot.current === 'string' && snapshot.current !== '') {
+				const stamp = sessionStamp(snapshot.current);
+				const known = seen[snapshot.current];
+				if (stamp > 0 && (typeof known !== 'number' || known < stamp)) {
+					seen[snapshot.current] = stamp;
+					changed = true;
+				}
+			}
+			if (changed) setState({ ...state, seen });
+		}
+
 		function membersOf(snapshot, sectionId) {
 			const members = [];
 			for (const [sessionId, assignment] of Object.entries(snapshot.assignments)) {
@@ -391,9 +433,46 @@ window.__ModuleLoader__.load({
 		 * SessionSummary fields: titles and cwd are read from several known names
 		 * and fall back to whatever the plugin recorded when the session was filed.
 		 */
-		function describeSession(sessionId, fallback) {
+		/** The list entry for one session; the exact SessionSummary fields are read defensively. */
+		function sessionSummary(sessionId) {
 			const snapshot = sessionsSnapshot();
-			const summary = isRecord(snapshot) && isRecord(snapshot.byId) ? snapshot.byId[sessionId] : undefined;
+			return isRecord(snapshot) && isRecord(snapshot.byId) ? snapshot.byId[sessionId] : undefined;
+		}
+
+		/** Last-activity stamp of one session; 0 while the list has no entry for it. */
+		function sessionStamp(sessionId) {
+			const summary = sessionSummary(sessionId);
+			const stamp = summary && summary.updatedAt;
+			if (typeof stamp === 'number' && Number.isFinite(stamp)) return stamp;
+			// The list may hand out an ISO timestamp instead of a millisecond number.
+			if (typeof stamp === 'string') {
+				const parsed = Date.parse(stamp);
+				if (Number.isFinite(parsed)) return parsed;
+			}
+			return 0;
+		}
+
+		/** True while the host reports live work for this session. */
+		function sessionRunning(sessionId) {
+			const summary = sessionSummary(sessionId);
+			return isRecord(summary) && summary.running === true;
+		}
+
+		/**
+		 * Trailing status of one Session row: live work wins, then a completion the
+		 * operator has not looked at yet. An empty result leaves the cell to the menu.
+		 */
+		function sessionRowStatus(snapshot, sessionId) {
+			if (sessionRunning(sessionId)) return 'running';
+			const summary = sessionSummary(sessionId);
+			if (!isRecord(summary) || summary.blank === true) return '';
+			const mark = isRecord(snapshot) && isRecord(snapshot.seen) ? snapshot.seen[sessionId] : undefined;
+			const stamp = sessionStamp(sessionId);
+			return typeof mark === 'number' && stamp > mark ? 'unread' : '';
+		}
+
+		function describeSession(sessionId, fallback) {
+			const summary = sessionSummary(sessionId);
 			const ids = liveSessionIds();
 			return {
 				sessionId,
@@ -420,6 +499,7 @@ window.__ModuleLoader__.load({
 		}
 
 		function showSession(sessionId) {
+			markSeen(sessionId, sessionStamp(sessionId));
 			if (services.uiWorkspace === null) return;
 			try {
 				services.uiWorkspace.openSession(sessionId);
@@ -995,6 +1075,29 @@ window.__ModuleLoader__.load({
 			sessionTitle: { flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
 			sessionTag: { flex: '0 0 auto', fontSize: 11, color: 'var(--dsw-alias-label-secondary)' },
 			sessionWarn: { flex: '0 0 auto', fontSize: 11, color: 'var(--dsw-alias-state-warn-primary)' },
+			rowTrail: { position: 'relative', flex: '0 0 auto', width: 20, height: 20 },
+			rowStatus: {
+				position: 'absolute',
+				inset: 0,
+				display: 'flex',
+				alignItems: 'center',
+				justifyContent: 'center',
+				pointerEvents: 'none',
+			},
+			unreadDot: { width: 8, height: 8, borderRadius: '50%', background: 'var(--dsw-alias-brand-primary)' },
+			rowMore: {
+				position: 'absolute',
+				inset: 0,
+				display: 'flex',
+				alignItems: 'center',
+				justifyContent: 'center',
+				padding: 0,
+				border: 'none',
+				borderRadius: 6,
+				background: 'transparent',
+				color: 'var(--dsw-alias-label-secondary)',
+				cursor: 'pointer',
+			},
 			rail: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '6px 0' },
 			railButton: {
 				display: 'flex',
@@ -1086,7 +1189,13 @@ window.__ModuleLoader__.load({
 			REVEAL_CLASS +
 			',.' +
 			REVEAL_CLASS +
-			':focus-visible{opacity:1}';
+			':focus-visible{opacity:1}' +
+			'.dsh-section-status{transition:opacity .12s ease}' +
+			'.' + ROW_CLASS + ':hover .dsh-section-status,.' + ROW_CLASS + ':focus-within .dsh-section-status{opacity:0}' +
+			'.dsh-section-spinner{display:block;width:10px;height:10px;border-radius:50%;' +
+			'border:1.5px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);' +
+			'animation:dsh-section-spin .8s linear infinite}' +
+			'@keyframes dsh-section-spin{to{transform:rotate(360deg)}}';
 
 		/* ----------------------------- panel view ----------------------------- */
 
@@ -1499,6 +1608,7 @@ window.__ModuleLoader__.load({
 			const snapshot = useSectionState();
 			const info = describeSession(sessionId, fallback);
 			const assignment = snapshot.assignments[sessionId];
+			const status = sessionRowStatus(snapshot, sessionId);
 			const tag = projectLabel(info.cwd);
 			const withTag = showProject !== false && tag !== '';
 
@@ -1551,18 +1661,38 @@ window.__ModuleLoader__.load({
 					withTag ? h('span', { style: S.sessionTag }, tag) : null,
 				),
 				h(
-					'button',
-					{
-						type: 'button',
-						className: HOVER_CLASS + ' ' + REVEAL_CLASS,
-						style: S.iconButton,
-						title: t('sidebar.sessionMenu'),
-						'aria-label': t('sidebar.sessionMenu'),
-						'aria-haspopup': 'menu',
-						'data-session': sessionId,
-						onClick: openMenu,
-					},
-					h(MoreIcon, null),
+					'div',
+					{ style: S.rowTrail },
+					status === ''
+						? null
+						: h(
+								'span',
+								{
+									className: 'dsh-section-status',
+									style: S.rowStatus,
+									'data-status': status,
+									role: 'img',
+									'aria-label': status === 'running' ? t('sidebar.running') : t('sidebar.unread'),
+									title: status === 'running' ? t('sidebar.running') : t('sidebar.unread'),
+								},
+								status === 'running'
+									? h('span', { className: 'dsh-section-spinner' })
+									: h('span', { style: S.unreadDot }),
+							),
+					h(
+						'button',
+						{
+							type: 'button',
+							className: HOVER_CLASS + ' ' + REVEAL_CLASS,
+							style: S.rowMore,
+							title: t('sidebar.sessionMenu'),
+							'aria-label': t('sidebar.sessionMenu'),
+							'aria-haspopup': 'menu',
+							'data-session': sessionId,
+							onClick: openMenu,
+						},
+						h(MoreIcon, null),
+					),
 				),
 			);
 		}
@@ -2585,6 +2715,15 @@ window.__ModuleLoader__.load({
 				services.sessions = ctx.sessions;
 				services.workspaces = ctx.workspaces;
 				services.uiWorkspace = ctx.uiWorkspace;
+
+				ctx.effect(() => {
+					const source = services.sessions === null ? undefined : services.sessions.list;
+					if (source === undefined || typeof source.subscribe !== 'function') return () => {};
+					const sync = () => syncSeen(source.getSnapshot());
+					const stop = source.subscribe(sync);
+					sync();
+					return stop;
+				}, 'dsh-section read baselines');
 
 				ctx.effect(() => ctx.locale.register(NS, { en: EN, zh: ZH }), 'dsh-section dictionaries');
 				ctx.effect(() => {

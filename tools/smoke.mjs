@@ -52,6 +52,7 @@ stored.set(
 		},
 		sidebar: 'host',
 		collapsed: { 'sec-2': true },
+		seen: { 's-bonus': 1 },
 	}),
 );
 
@@ -185,7 +186,7 @@ function renderEntry(component, props) {
 
 const SESSIONS = [
 	{ id: 's-bonus', displayTitle: 'Bonus 回源优化', cwd: '/Users/dev/mshop', updatedAt: 30, blank: false },
-	{ id: 's-epin', displayTitle: 'ePin SETA 限制', cwd: '/Users/dev/apollo_data', updatedAt: 20, blank: false },
+	{ id: 's-epin', displayTitle: 'ePin SETA 限制', cwd: '/Users/dev/apollo_data', updatedAt: 20, blank: false, running: true },
 	{ id: 's-blank', displayTitle: '', cwd: '/Users/dev/mshop', updatedAt: 10, blank: true },
 	{ id: 's-sub', displayTitle: 'subagent', cwd: '/Users/dev/mshop', updatedAt: 40, origin: 'subagent', blank: false },
 ];
@@ -398,6 +399,45 @@ browser.hosts.find((node) => node.props.title === 'sidebar.expand').props.onClic
 const expandedBrowser = renderEntry(browserEntry.component, browserProps(true));
 check('expanding reveals the member again', expandedBrowser.texts.includes('失效会话'));
 check('stale member still listed as stale', expandedBrowser.texts.includes('panel.missing'));
+
+console.log('# session row status');
+const statusCells = (rendered) => rendered.hosts.filter((node) => node.props['data-status'] !== undefined);
+const statusOf = (rendered, value) => statusCells(rendered).find((node) => node.props['data-status'] === value);
+const unreadCell = statusOf(expandedBrowser, 'unread');
+check(
+	'an unwatched completion marks its row in the menu cell',
+	unreadCell !== undefined && unreadCell.props.className === 'dsh-section-status',
+	statusCells(expandedBrowser).map((node) => node.props['data-status']),
+);
+check(
+	'the unread marker is a small brand dot',
+	unreadCell !== undefined &&
+		unreadCell.children.some(
+			(child) => child && child.props && typeof child.props.style === 'object' && child.props.style.borderRadius === '50%',
+		),
+);
+check(
+	'the row keeps its dropdown trigger beside the status',
+	sessionTrigger(expandedBrowser, 's-bonus') !== undefined,
+);
+const runningCell = statusOf(expandedBrowser, 'running');
+check(
+	'live work shows a spinner in the same cell',
+	runningCell !== undefined &&
+		runningCell.children.some((child) => child && child.props && child.props.className === 'dsh-section-spinner'),
+);
+const rowOpen = expandedBrowser.hosts.find(
+	(node) => node.type === 'button' && node.props.title === 'Bonus 回源优化',
+);
+check('a row still opens its session', rowOpen !== undefined);
+rowOpen.props.onClick();
+useTree('browser');
+const afterRead = renderEntry(browserEntry.component, browserProps(true));
+check(
+	'opening a session clears its unread marker',
+	statusOf(afterRead, 'unread') === undefined && statusOf(afterRead, 'running') !== undefined,
+	statusCells(afterRead).map((node) => node.props['data-status']),
+);
 
 console.log('# session row dropdown');
 const rowMenuTrigger = sessionTrigger(expandedBrowser, 's-bonus');
