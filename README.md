@@ -59,6 +59,8 @@ cordis.patch.yml   插件组成（insert @local/dsh-section）
 icon.svg           插件图标
 locale/en.json     设置页展示用的英文标题与说明
 locale/zh.json     设置页展示用的中文标题与说明
+screenshots.json   插件市场展示的截图清单
+assets/            README 与插件市场用的截图、图标
 tools/smoke.mjs    冒烟测试（不随包发布）
 tools/audit.mjs    静态审计（不随包发布）
 ```
@@ -122,6 +124,8 @@ cordis.patch.yml   composition patch (insert @local/dsh-section)
 icon.svg           plugin icon
 locale/en.json     English title/description shown on the Plugins page
 locale/zh.json     Chinese title/description shown on the Plugins page
+screenshots.json   screenshot list for the plugin storefront
+assets/            screenshots and storefront icon used by the README
 tools/smoke.mjs    smoke tests (not published)
 tools/audit.mjs    static audit (not published)
 ```
