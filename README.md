@@ -2,6 +2,8 @@
 
 [中文](#中文) · [English](#english)
 
+![分组模式侧栏：上半部分是分组树，下面是按项目分好的未分组会话](assets/sidebar-section-mode.webp)
+
 ---
 
 ## 中文
