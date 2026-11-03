@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-section
+      name: '@local/dsh-section'
