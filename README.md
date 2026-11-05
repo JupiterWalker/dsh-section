@@ -17,8 +17,9 @@ DSH 默认按项目组织会话，但一段工作常常横跨多个仓库：需�
 ### 功能
 
 - **分组管理面板**：侧栏图标栏的「分组」图标打开，可新建/重命名/删除分组，往里添加会话，并清理已失效（会话被删）的成员。
-- **分组模式侧栏**：面板里的开关可以把左侧浏览区换成按分组的树（再关一次即恢复宿主原样）。同一棵树上还能看到按项目分好的未分组会话。
+- **分组模式侧栏**：面板里的开关可以把左侧浏览区换成按分组的树（再关一次即恢复宿主原样）；树上的工具条只留筛选 `⌕` 与新增 `+`。同一棵树上还能看到按项目分好的未分组会话。
 - **分组操作**：分组头部的 `⋯` → 添加会话 / 重命名 / 删除（删除需二次确认）。
+- **长分组分页**：一个分组（或项目）超过 5 个会话时只渲染第一页，底下出现「显示更多」，每点一次多 5 行；折叠该组会回到第一页。
 - **会话操作**：会话行尾的 `⋯` → 加入分组（已在分组里则是移出分组）/ 重命名 / 归档。
 - **项目操作**：项目区每个项目头部的 `⋯` → 添加会话 / 整个项目加入分组 / 归档项目（= 从侧栏移除该项目，不会删除磁盘文件，需二次确认）。
 - **项目区顶栏**：`⌕` 按项目名或会话标题筛选，`+` 选择目录新增项目。
@@ -39,7 +40,7 @@ plugin_manager action=install_bundle target=/绝对路径/dsh-section
 
 ### 数据与边界
 
-- 分组与归属关系保存在**浏览器 localStorage** 的键 `dsh-section.state.v1` 下（纯前端 UI 数据，不写入门户会话事件、不上传）；其中也存了每个会话的「已读到哪个时间」的标记，用于行尾状态点。
+- 分组与归属关系保存在**浏览器 localStorage** 的键 `dsh-section.state.v1` 下（纯前端 UI 数据，不写入门户会话事件、不上传）；其中也存了每个会话的「已读到哪个时间」的标记，用于行尾状态点。「显示更多」的展开进度只存在内存里，刷新即回到第一页。
 - 分组模式侧栏通过遮蔽宿主的 `sidebar.workspaces` 席位实现（`priority: -1`），因此宿主侧栏升级后可能需要跟随适配。
 - 归档项目 = 调用宿主 workspace 的删除/移除，只影响侧栏列表。
 
@@ -83,8 +84,9 @@ DSH organizes sessions by project, but real work usually spans several repositor
 ### Features
 
 - **Section panel**: open it from the "Sections" icon in the sidebar rail; create, rename and delete sections, add sessions to them, and clean up members whose session no longer exists.
-- **Section-mode sidebar**: a switch in the panel replaces the shipped workspace browser with a section tree (toggle it off to restore the host UI). The tree also lists ungrouped sessions, grouped by project.
+- **Section-mode sidebar**: a switch in the panel replaces the shipped workspace browser with a section tree (toggle it off to restore the host UI); its toolbar keeps just the filter and add buttons. The tree also lists ungrouped sessions, grouped by project.
 - **Section actions**: the `⋯` in a section header → add session / rename / delete (delete asks for confirmation first).
+- **Long groups page in fives**: a section (or project) with more than five sessions renders one page and offers *Show more*, five rows per click; folding the group returns it to the first page.
 - **Session actions**: the `⋯` at the end of a session row → group (or ungroup) / rename / archive.
 - **Project actions**: the `⋯` in a project header → new session / move the whole project into a section / archive the project (removes it from the sidebar, does not touch files on disk, asks for confirmation).
 - **Project area bar**: `⌕` filters by project name or session title; `+` picks a directory and registers a new project.
@@ -105,7 +107,7 @@ You can also add the package to the profile `bundles` manually. It is installed 
 
 ### Data and boundaries
 
-- Sections, assignments and per-session read marks live in **browser localStorage** under `dsh-section.state.v1` (pure front-end UI data — no session events are appended, nothing is uploaded).
+- Sections, assignments and per-session read marks live in **browser localStorage** under `dsh-section.state.v1` (pure front-end UI data — no session events are appended, nothing is uploaded). How far a group has been unfolded by *Show more* is in-memory only, so a reload starts at the first page.
 - Section mode works by shadowing the host's `sidebar.workspaces` seat (`priority: -1`), so a future host sidebar change may need a follow-up adaptation.
 - Archiving a project calls the host workspace removal and only affects the sidebar list.
 

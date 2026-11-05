@@ -389,10 +389,30 @@ check(
 	browser.texts.includes('loyalty2.2') && browser.texts.includes('ePin') && browser.texts.includes('Bonus 回源优化'),
 	browser.texts.slice(0, 14),
 );
+check(
+	'the section header shows its name without a colour dot',
+	(() => {
+		const toggle = browser.hosts.find((node) => node.props.title === 'sidebar.collapse');
+		return (
+			toggle !== undefined &&
+			toggle.children.filter((child) => child && child.props && child.props.style && child.props.style.borderRadius === '50%')
+				.length === 0
+		);
+	})(),
+);
 check('collapsed section hides its members', !browser.texts.includes('失效会话'));
 check('ungrouped session shows under its workspace', browser.texts.includes('apollo_data') && browser.texts.includes('ePin SETA 限制'));
 check('subagent and blank sessions stay hidden', !browser.texts.includes('subagent'));
-check('project view entry point present', browser.hosts.some((node) => node.props.title === 'sidebar.hostView'));
+const toolbarTitles = browser.hosts
+	.filter((node) => node.type === 'button' && typeof node.props.title === 'string')
+	.map((node) => node.props.title);
+check(
+	'the section toolbar offers filter and new section only',
+	toolbarTitles.includes('sidebar.filter') &&
+		toolbarTitles.includes('sidebar.newSection') &&
+		!toolbarTitles.includes('sidebar.hostView'),
+	toolbarTitles,
+);
 
 console.log('# expanding a collapsed section');
 browser.hosts.find((node) => node.props.title === 'sidebar.expand').props.onClick();
@@ -410,10 +430,15 @@ check(
 	statusCells(expandedBrowser).map((node) => node.props['data-status']),
 );
 check(
-	'the unread marker is a small brand dot',
+	'the unread marker is a small blue dot',
 	unreadCell !== undefined &&
 		unreadCell.children.some(
-			(child) => child && child.props && typeof child.props.style === 'object' && child.props.style.borderRadius === '50%',
+			(child) =>
+				child &&
+				child.props &&
+				typeof child.props.style === 'object' &&
+				child.props.style.borderRadius === '50%' &&
+				child.props.style.background === '#4C8DFF',
 		),
 );
 check(
@@ -421,10 +446,28 @@ check(
 	sessionTrigger(expandedBrowser, 's-bonus') !== undefined,
 );
 const runningCell = statusOf(expandedBrowser, 'running');
+const spinnerHost = expandedBrowser.hosts.find((node) => node.props.className === 'dsh-section-spinner');
 check(
-	'live work shows a spinner in the same cell',
+	'live work shows a svg spinner ring in the same cell',
 	runningCell !== undefined &&
-		runningCell.children.some((child) => child && child.props && child.props.className === 'dsh-section-spinner'),
+		runningCell.children.some((child) => child && typeof child.type === 'function' && child.type.name === 'SpinnerIcon') &&
+		spinnerHost !== undefined &&
+		spinnerHost.type === 'svg' &&
+		spinnerHost.children.length === 2,
+);
+const filterButtons = expandedBrowser.hosts.filter(
+	(node) => node.type === 'button' && (node.props.title === 'sidebar.filter' || node.props.title === 'sidebar.filterProjects'),
+);
+check(
+	'both toolbars draw the search glyph at the plus size',
+	filterButtons.length === 2 &&
+		filterButtons.every(
+			(node) =>
+				node.props.style.width === 22 &&
+				node.children.some((child) => child && typeof child.type === 'function' && child.type.name === 'SearchIcon'),
+		) &&
+		!expandedBrowser.texts.includes('⌕'),
+	expandedBrowser.hosts.filter((node) => node.type === 'button').map((node) => node.props.title),
 );
 const rowOpen = expandedBrowser.hosts.find(
 	(node) => node.type === 'button' && node.props.title === 'Bonus 回源优化',
@@ -676,7 +719,9 @@ check(
 useTree('browser');
 
 console.log('# back to the host view');
-browser.hosts.find((node) => node.props.title === 'sidebar.hostView').props.onClick();
+useTree('panel');
+const panelBack = renderEntry(panelEntry.component, { t: (key) => key });
+panelBack.hosts.find((node) => node.props.role === 'switch').props.onClick();
 check('sidebar entry disposed', browserEntry.active === false, fakeCtx.slots.disposed.map((options) => options.name));
 check('mode back to host', mode() === 'host', mode());
 
@@ -731,6 +776,88 @@ check(
 	'sidebar icon renders the section glyph',
 	renderEntry(iconEntry.component, { size: 16, active: false }).hosts.some((node) => node.type === 'svg'),
 );
+
+console.log('# paging long groups');
+// A group longer than one page shows five rows and reveals five more per click
+// until the whole group is visible, in the section view as well as the project view.
+for (let index = 0; index < 7; index += 1) {
+	const id = 's-page' + index;
+	SESSIONS.push({ id, displayTitle: '分页会话 ' + index, cwd: '/Users/dev/mshop', updatedAt: 5 + index, blank: false });
+	workspaces.items[0].sessionIds.push(id);
+}
+const pageRows = (rendered) =>
+	rendered.hosts
+		.filter((node) => typeof node.props['data-session'] === 'string' && node.props['data-session'].startsWith('s-page'))
+		.map((node) => node.props['data-session']);
+const showMoreButton = (rendered) =>
+	rendered.hosts.find((node) => node.type === 'button' && labelOf(node) === 'sidebar.showMore');
+// a group's page is the rows between its own trigger and its own Show more button
+const rowsInGroup = (rendered, prop, value) => {
+	const start = rendered.hosts.findIndex((node) => node.props[prop] === value);
+	const more = rendered.hosts.findIndex(
+		(node, index) => index > start && node.type === 'button' && labelOf(node) === 'sidebar.showMore',
+	);
+	const end = more === -1 ? rendered.hosts.length : more;
+	return rendered.hosts.slice(start, end).filter((node) => typeof node.props['data-session'] === 'string').length;
+};
+useTree('browser:paging');
+const pagedProject = renderEntry(browserEntry.component, browserProps(true));
+check(
+	'a long project group shows one page of rows',
+	rowsInGroup(pagedProject, 'data-group', 'ws:/Users/dev/mshop') === 5,
+	rowsInGroup(pagedProject, 'data-group', 'ws:/Users/dev/mshop'),
+);
+check('a long project group offers Show more', showMoreButton(pagedProject) !== undefined);
+showMoreButton(pagedProject).props.onClick();
+const pagedAgain = renderEntry(browserEntry.component, browserProps(true));
+check('Show more reveals the next page', pageRows(pagedAgain).length === 7, pageRows(pagedAgain));
+check('a fully revealed group drops Show more', showMoreButton(pagedAgain) === undefined);
+// folding a group away returns it to its first page
+const groupToggle = (rendered, prop, value, title) => {
+	const index = rendered.hosts.findIndex((node) => node.props[prop] === value);
+	for (let cursor = index; cursor >= 0; cursor -= 1) {
+		if (rendered.hosts[cursor].props.title === title) return rendered.hosts[cursor];
+	}
+	return undefined;
+};
+const projectKey = 'ws:/Users/dev/mshop';
+groupToggle(pagedAgain, 'data-group', projectKey, 'sidebar.collapse').props.onClick();
+const foldedAway = renderEntry(browserEntry.component, browserProps(true));
+groupToggle(foldedAway, 'data-group', projectKey, 'sidebar.expand').props.onClick();
+const reopened = renderEntry(browserEntry.component, browserProps(true));
+check(
+	'folding a group away returns it to its first page',
+	rowsInGroup(reopened, 'data-group', projectKey) === 5 && showMoreButton(reopened) !== undefined,
+	[rowsInGroup(reopened, 'data-group', projectKey), showMoreButton(reopened) !== undefined],
+);
+check(
+	'the reveal count is not persisted',
+	Object.keys(state().revealed === undefined ? {} : state().revealed).length === 0,
+	state().revealed,
+);
+
+console.log('# paging a section');
+projectTrigger(pagedAgain, 'ws:/Users/dev/mshop').props.onClick();
+let moveOverlay = openOverlay('overlay:paging');
+menuItem(moveOverlay, 'sidebar.toSection').props.onClick();
+moveOverlay = openOverlay('overlay:paging');
+sectionOption(moveOverlay, 'sec-2').props.onClick();
+useTree('browser:paging:section');
+let pagedSection = renderEntry(browserEntry.component, browserProps(true));
+const expander = pagedSection.hosts.find((node) => node.props.title === 'sidebar.expand');
+if (expander !== undefined) {
+	expander.props.onClick();
+	pagedSection = renderEntry(browserEntry.component, browserProps(true));
+}
+check(
+	'a long section shows one page of rows',
+	rowsInGroup(pagedSection, 'data-section', 'sec-2') === 5,
+	rowsInGroup(pagedSection, 'data-section', 'sec-2'),
+);
+check('a long section offers Show more', showMoreButton(pagedSection) !== undefined);
+showMoreButton(pagedSection).props.onClick();
+const pagedSectionAgain = renderEntry(browserEntry.component, browserProps(true));
+check('Show more reveals the rest of the section', pageRows(pagedSectionAgain).length === 7, pageRows(pagedSectionAgain));
 
 console.log('# cleanup');
 for (const dispose of fakeCtx.cleanups) if (typeof dispose === 'function') dispose();

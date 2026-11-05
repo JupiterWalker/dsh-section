@@ -27,6 +27,8 @@ window.__ModuleLoader__.load({
 		const PICKER_LIMIT = 60;
 
 		/** Section dropdown geometry: fixed panel width, ~30px per row. */
+		/* The theme's brand accent renders monochrome here, so the unread marker keeps its own blue. */
+		const UNREAD_COLOR = '#4C8DFF';
 		const SECTION_MENU_WIDTH = 208;
 		const SECTION_MENU_ROW = 30;
 
@@ -58,9 +60,9 @@ window.__ModuleLoader__.load({
 			'sidebar.title': 'Sections',
 			'sidebar.projects': 'Projects',
 			'sidebar.filterProjects': 'Filter projects and sessions',
+			'sidebar.showMore': 'Show more',
 			'sidebar.newProject': 'Add project',
 			'sidebar.emptyProjects': 'No projects yet.',
-			'sidebar.hostView': 'Workspace view',
 			'sidebar.newSection': 'New section',
 			'sidebar.addSession': 'Add session',
 			'sidebar.assign': 'Group',
@@ -123,9 +125,9 @@ window.__ModuleLoader__.load({
 			'sidebar.title': '分组',
 			'sidebar.projects': '项目',
 			'sidebar.filterProjects': '筛选项目和会话',
+			'sidebar.showMore': '显示更多',
 			'sidebar.newProject': '新增项目',
 			'sidebar.emptyProjects': '还没有项目。',
-			'sidebar.hostView': '工作区视图',
 			'sidebar.newSection': '新建分组',
 			'sidebar.addSession': '添加会话',
 			'sidebar.assign': '加入分组',
@@ -163,7 +165,7 @@ window.__ModuleLoader__.load({
 		/* ------------------------------ state ------------------------------ */
 
 		/** `sidebar` remembers which browser the left column shows; `collapsed` folds groups. */
-		const EMPTY_STATE = { sections: [], assignments: {}, sidebar: 'host', collapsed: {}, seen: {} };
+		const EMPTY_STATE = { sections: [], assignments: {}, sidebar: 'host', collapsed: {}, revealed: {}, seen: {} };
 
 		function isRecord(value) {
 			return typeof value === 'object' && value !== null;
@@ -220,6 +222,12 @@ window.__ModuleLoader__.load({
 					if (key !== '' && value === true) collapsed[key] = true;
 				}
 			}
+			const revealed = {};
+			if (isRecord(raw) && isRecord(raw.revealed)) {
+				for (const [key, value] of Object.entries(raw.revealed)) {
+					if (key !== '' && typeof value === 'number' && Number.isFinite(value) && value > 0) revealed[key] = value;
+				}
+			}
 			const seen = {};
 			if (isRecord(raw) && isRecord(raw.seen)) {
 				for (const [sessionId, value] of Object.entries(raw.seen)) {
@@ -227,7 +235,7 @@ window.__ModuleLoader__.load({
 				}
 			}
 			const sidebar = isRecord(raw) && raw.sidebar === 'sections' ? 'sections' : 'host';
-			return { sections, assignments, sidebar, collapsed, seen };
+			return { sections, assignments, sidebar, collapsed, revealed, seen };
 		}
 
 		function loadState() {
@@ -264,7 +272,8 @@ window.__ModuleLoader__.load({
 			// caller hands over a partial object.
 			state = normalize(next);
 			try {
-				window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+				// Show more is view state: a fresh page starts each group on its first page.
+				window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, revealed: {} }));
 			} catch (error) {
 				console.warn('[dsh-section] could not persist local state', error);
 			}
@@ -352,7 +361,26 @@ window.__ModuleLoader__.load({
 			const collapsed = { ...state.collapsed };
 			if (collapsed[key] === true) delete collapsed[key];
 			else collapsed[key] = true;
-			setState({ ...state, collapsed });
+			// Folding a group away also drops how far it had been unfolded.
+			const revealed = { ...state.revealed };
+			delete revealed[key];
+			setState({ ...state, collapsed, revealed });
+		}
+
+		/**
+		 * How much of one group is on screen: the first GROUP_PAGE rows, plus one
+		 * more page per Show more click, until the whole group is visible. The
+		 * counts live with the collapse flags so a group keeps its page.
+		 */
+		function groupPage(snapshot, key, total) {
+			const shown = snapshot.revealed[key];
+			const wanted = typeof shown === 'number' && Number.isFinite(shown) ? shown : GROUP_PAGE;
+			const count = Math.min(total, Math.max(GROUP_PAGE, wanted));
+			return { count, more: total > count, key, total };
+		}
+
+		function revealGroup(key, total) {
+			setState({ ...state, revealed: { ...state.revealed, [key]: groupPage(state, key, total).count + GROUP_PAGE } });
 		}
 
 		/** Remember that the operator has looked at this session up to `stamp`. */
@@ -974,17 +1002,6 @@ window.__ModuleLoader__.load({
 				font: 'inherit',
 				cursor: 'pointer',
 			},
-			toolButton: {
-				flex: '0 0 auto',
-				background: 'transparent',
-				border: 'none',
-				borderRadius: 6,
-				padding: '3px 6px',
-				color: 'var(--dsw-alias-label-secondary)',
-				font: 'inherit',
-				fontSize: 12,
-				cursor: 'pointer',
-			},
 			group: { display: 'flex', flexDirection: 'column' },
 			groupHeader: { display: 'flex', alignItems: 'center', gap: 2, minHeight: 26, borderRadius: 6 },
 			groupActions: { flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 2 },
@@ -1013,6 +1030,19 @@ window.__ModuleLoader__.load({
 			},
 			groupName: { flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
 			groupBody: { display: 'flex', flexDirection: 'column', gap: 1, paddingLeft: 16 },
+			moreRow: {
+				display: 'block',
+				width: '100%',
+				textAlign: 'left',
+				padding: '4px 8px',
+				background: 'transparent',
+				border: 'none',
+				borderRadius: 6,
+				color: 'var(--dsw-alias-label-secondary)',
+				font: 'inherit',
+				fontSize: 12,
+				cursor: 'pointer',
+			},
 			menuBackdrop: { position: 'fixed', inset: 0, pointerEvents: 'auto', zIndex: 60 },
 			menuPanel: {
 				position: 'fixed',
@@ -1084,7 +1114,7 @@ window.__ModuleLoader__.load({
 				justifyContent: 'center',
 				pointerEvents: 'none',
 			},
-			unreadDot: { width: 8, height: 8, borderRadius: '50%', background: 'var(--dsw-alias-brand-primary)' },
+			unreadDot: { width: 8, height: 8, borderRadius: '50%', background: UNREAD_COLOR },
 			rowMore: {
 				position: 'absolute',
 				inset: 0,
@@ -1192,9 +1222,7 @@ window.__ModuleLoader__.load({
 			':focus-visible{opacity:1}' +
 			'.dsh-section-status{transition:opacity .12s ease}' +
 			'.' + ROW_CLASS + ':hover .dsh-section-status,.' + ROW_CLASS + ':focus-within .dsh-section-status{opacity:0}' +
-			'.dsh-section-spinner{display:block;width:10px;height:10px;border-radius:50%;' +
-			'border:1.5px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);' +
-			'animation:dsh-section-spin .8s linear infinite}' +
+			'.dsh-section-spinner{display:block;transform-origin:center;animation:dsh-section-spin .8s linear infinite}' +
 			'@keyframes dsh-section-spin{to{transform:rotate(360deg)}}';
 
 		/* ----------------------------- panel view ----------------------------- */
@@ -1526,6 +1554,8 @@ window.__ModuleLoader__.load({
 		/* ---------------------------- sidebar browser ---------------------------- */
 
 		const SESSION_ROW_LIMIT = 200;
+		/* Only the first page of a group renders; each Show more click adds one page. */
+		const GROUP_PAGE = 5;
 
 		function Chevron({ open }) {
 			return h(
@@ -1542,6 +1572,46 @@ window.__ModuleLoader__.load({
 					'aria-hidden': 'true',
 				},
 				h('path', { d: open ? 'M2.4 3.6 5 6.4 7.6 3.6' : 'M3.8 2.4 6.6 5 3.8 7.6' }),
+			);
+		}
+
+		function SpinnerIcon() {
+			return h(
+				'svg',
+				{
+					className: 'dsh-section-spinner',
+					width: 12,
+					height: 12,
+					viewBox: '0 0 12 12',
+					fill: 'none',
+					'aria-hidden': 'true',
+				},
+				h('circle', { cx: 6, cy: 6, r: 4.6, stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 1.4 }),
+				h('path', {
+					d: 'M6 1.4a4.6 4.6 0 0 1 4.6 4.6',
+					stroke: UNREAD_COLOR,
+					strokeWidth: 1.4,
+					strokeLinecap: 'round',
+				}),
+			);
+		}
+
+		function SearchIcon({ size }) {
+			const dimension = typeof size === 'number' && size > 0 ? size : 12;
+			return h(
+				'svg',
+				{
+					width: dimension,
+					height: dimension,
+					viewBox: '0 0 12 12',
+					fill: 'none',
+					stroke: 'currentColor',
+					strokeWidth: 1.4,
+					strokeLinecap: 'round',
+					'aria-hidden': 'true',
+				},
+				h('circle', { cx: 5.2, cy: 5.2, r: 3.3 }),
+				h('path', { d: 'M7.7 7.7 10.4 10.4' }),
 			);
 		}
 
@@ -1676,7 +1746,7 @@ window.__ModuleLoader__.load({
 									title: status === 'running' ? t('sidebar.running') : t('sidebar.unread'),
 								},
 								status === 'running'
-									? h('span', { className: 'dsh-section-spinner' })
+									? h(SpinnerIcon, null)
 									: h('span', { style: S.unreadDot }),
 							),
 					h(
@@ -1698,10 +1768,30 @@ window.__ModuleLoader__.load({
 		}
 
 		/** One section: collapsible, renameable, and a target for its own picker. */
+		/**
+		 * Page one group's rows: the first GROUP_PAGE render, every Show more click
+		 * reveals the next page until the whole group is visible.
+		 */
+		function ShowMoreRow({ page, t }) {
+			return page.more
+				? h(
+						'button',
+						{
+							type: 'button',
+							className: HOVER_CLASS,
+							style: S.moreRow,
+							onClick: () => revealGroup(page.key, page.total),
+						},
+						t('sidebar.showMore'),
+					)
+				: null;
+		}
+
 		function SidebarSectionGroup({ section, members, snapshot, t }) {
 			const [picking, setPicking] = React.useState(false);
 			const [renaming, setRenaming] = React.useState(false);
 			const [draft, setDraft] = React.useState(section.name);
+			const page = groupPage(snapshot, section.id, members.length);
 			const collapsed = snapshot.collapsed[section.id] === true;
 
 			function commitRename() {
@@ -1741,7 +1831,6 @@ window.__ModuleLoader__.load({
 									onClick: () => toggleCollapsed(section.id),
 								},
 								h('span', { style: S.chevron }, h(Chevron, { open: !collapsed })),
-								h('span', { style: { ...S.dot, background: sectionColor(section.id) } }),
 								h('span', { style: S.groupName }, section.name),
 							),
 					renaming
@@ -1800,10 +1889,11 @@ window.__ModuleLoader__.load({
 							members.length === 0 && !picking
 								? h('div', { style: S.sidebarHint }, t('panel.noMembers'))
 								: members
-										.slice(0, SESSION_ROW_LIMIT)
+										.slice(0, page.count)
 										.map(({ sessionId, assignment }) =>
 											h(SidebarSessionRow, { key: sessionId, sessionId, fallback: assignment, t }),
 										),
+							h(ShowMoreRow, { key: 'more', page, t }),
 						),
 			);
 		}
@@ -1814,6 +1904,7 @@ window.__ModuleLoader__.load({
 		 */
 		function SidebarWorkspaceGroup({ groupKey, name, workspaceId, sessionIds, t }) {
 			const snapshot = useSectionState();
+			const page = groupPage(snapshot, groupKey, sessionIds.length);
 			const collapsed = snapshot.collapsed[groupKey] === true;
 
 			function openMenu(event) {
@@ -1905,10 +1996,11 @@ window.__ModuleLoader__.load({
 							sessionIds.length === 0
 								? h('div', { style: S.sidebarHint }, t('sidebar.empty'))
 								: sessionIds
-										.slice(0, SESSION_ROW_LIMIT)
+										.slice(0, page.count)
 										.map((sessionId) =>
 											h(SidebarSessionRow, { key: sessionId, sessionId, fallback: undefined, t, showProject: false }),
 										),
+							h(ShowMoreRow, { key: 'more', page, t }),
 						),
 			);
 		}
@@ -2047,23 +2139,12 @@ window.__ModuleLoader__.load({
 						{
 							type: 'button',
 							className: HOVER_CLASS,
-							style: S.toolButton,
+							style: S.iconButton,
 							title: t('sidebar.filter'),
 							'aria-label': t('sidebar.filter'),
 							onClick: () => setFilterOpen((open) => !open),
 						},
-						'⌕',
-					),
-					h(
-						'button',
-						{
-							type: 'button',
-							className: HOVER_CLASS,
-							style: S.toolButton,
-							title: t('sidebar.hostView'),
-							onClick: () => setSidebarMode('host'),
-						},
-						t('sidebar.hostView'),
+						h(SearchIcon, null),
 					),
 					h(
 						'button',
@@ -2113,12 +2194,12 @@ window.__ModuleLoader__.load({
 						{
 							type: 'button',
 							className: HOVER_CLASS,
-							style: S.toolButton,
+							style: S.iconButton,
 							title: t('sidebar.filterProjects'),
 							'aria-label': t('sidebar.filterProjects'),
 							onClick: () => setProjectFilterOpen((open) => !open),
 						},
-						'⌕',
+						h(SearchIcon, null),
 					),
 					h(
 						'button',
