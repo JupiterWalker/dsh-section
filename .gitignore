@@ -8,3 +8,6 @@
 # Dependencies and logs
 node_modules/
 npm-debug.log*
+
+# Local pack output (release assets are built on demand)
+dist/
