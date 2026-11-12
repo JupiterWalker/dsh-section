@@ -190,12 +190,14 @@ const SESSIONS = [
 	{ id: 's-blank', displayTitle: '', cwd: '/Users/dev/mshop', updatedAt: 10, blank: true },
 	{ id: 's-sub', displayTitle: 'subagent', cwd: '/Users/dev/mshop', updatedAt: 40, origin: 'subagent', blank: false },
 ];
+const subagentsByParent = {};
 const sessionList = {
 	getSnapshot: () => ({
 		ids: SESSIONS.map((session) => session.id),
 		byId: Object.fromEntries(SESSIONS.map((session) => [session.id, session])),
 		current: undefined,
 		phase: 'ready',
+		subagentsByParent,
 	}),
 	subscribe: () => () => {},
 };
@@ -455,6 +457,41 @@ check(
 		spinnerHost.type === 'svg' &&
 		spinnerHost.children.length === 2,
 );
+// a session that delegated to a subagent keeps spinning while the child works
+const rowOf = (rendered, sessionId) => {
+	const index = rendered.hosts.findIndex((node) => node.props['data-session'] === sessionId);
+	let start = index;
+	while (start > 0 && !String(rendered.hosts[start].props.className || '').includes('dsh-section-row')) start -= 1;
+	let end = rendered.hosts.length;
+	for (let cursor = start + 1; cursor < rendered.hosts.length; cursor += 1) {
+		if (String(rendered.hosts[cursor].props.className || '').includes('dsh-section-row')) {
+			end = cursor;
+			break;
+		}
+	}
+	return rendered.hosts.slice(start, end);
+};
+const rowStatus = (rendered, sessionId) => {
+	const cell = rowOf(rendered, sessionId).find((node) => node.props['data-status'] !== undefined);
+	return cell === undefined ? '' : cell.props['data-status'];
+};
+subagentsByParent['s-bonus'] = {
+	state: 'ready',
+	parentAvailable: true,
+	entries: [{ kind: 'child', id: 's-child', activity: 'running', hasChildren: false, mode: 'one-shot' }],
+};
+useTree('browser:delegated');
+const delegatedBrowser = renderEntry(browserEntry.component, browserProps(true));
+check('a delegated subagent keeps the row spinning', rowStatus(delegatedBrowser, 's-bonus') === 'running', rowStatus(delegatedBrowser, 's-bonus'));
+subagentsByParent['s-bonus'] = {
+	state: 'ready',
+	parentAvailable: true,
+	entries: [{ kind: 'child', id: 's-child', activity: 'inactive', hasChildren: false, mode: 'one-shot' }],
+};
+useTree('browser:delegated');
+const idleChildBrowser = renderEntry(browserEntry.component, browserProps(true));
+check('an idle subagent leaves the row alone', rowStatus(idleChildBrowser, 's-bonus') === 'unread', rowStatus(idleChildBrowser, 's-bonus'));
+delete subagentsByParent['s-bonus'];
 const filterButtons = expandedBrowser.hosts.filter(
 	(node) => node.type === 'button' && (node.props.title === 'sidebar.filter' || node.props.title === 'sidebar.filterProjects'),
 );

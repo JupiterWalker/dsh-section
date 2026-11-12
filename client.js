@@ -483,7 +483,19 @@ window.__ModuleLoader__.load({
 		/** True while the host reports live work for this session. */
 		function sessionRunning(sessionId) {
 			const summary = sessionSummary(sessionId);
-			return isRecord(summary) && summary.running === true;
+			if (isRecord(summary) && summary.running === true) return true;
+			const snapshot = sessionsSnapshot();
+			// Work handed to a subagent or a background job keeps the parent busy even
+			// while its own turn waits for the result.
+			const catalogs = isRecord(snapshot.subagentsByParent) ? snapshot.subagentsByParent : undefined;
+			const catalog = catalogs === undefined ? undefined : catalogs[sessionId];
+			const children = isRecord(catalog) && Array.isArray(catalog.entries) ? catalog.entries : [];
+			if (children.some((entry) => isRecord(entry) && entry.kind === 'child' && entry.activity === 'running')) return true;
+			const jobs = isRecord(snapshot.jobsBySession) ? snapshot.jobsBySession[sessionId] : undefined;
+			const running = Array.isArray(jobs) ? jobs : [];
+			return running.some(
+				(job) => isRecord(job) && (job.status === 'running' || job.state === 'running' || job.running === true),
+			);
 		}
 
 		/**

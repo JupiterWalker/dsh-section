@@ -24,7 +24,7 @@ DSH 默认按项目组织会话，但一段工作常常横跨多个仓库：需�
 - **项目操作**：项目区每个项目头部的 `⋯` → 添加会话 / 整个项目加入分组 / 归档项目（= 从侧栏移除该项目，不会删除磁盘文件，需二次确认）。
 - **项目区顶栏**：`⌕` 按项目名或会话标题筛选，`+` 选择目录新增项目。
 - **会话行标记**：属于某个分组的会话，在侧栏行首会有一个分组色点（该行处于 idle 状态时才会显示）。
-- **会话行状态**：行尾同一个格子告诉你这个会话现在要不要看一眼——正在跑（转圈）或跑完还没看过（分组色点）；鼠标移到该行时它让位给 `⋯`。打开会话即记为已读，首次加载会把当时所有会话当作已读基线。
+- **会话行状态**：行尾同一个格子告诉你这个会话现在要不要看一眼——正在跑（转圈：自己这一轮、派出去还没回来的子代理、没结束的后台任务都算）或跑完还没看过（分组色点）；鼠标移到该行时它让位给 `⋯`。打开会话即记为已读，首次加载会把当时所有会话当作已读基线。
 - **中英文**：界面跟随宿主语言切换（内置 en / zh 词典）。
 
 ### 安装
@@ -91,7 +91,7 @@ DSH organizes sessions by project, but real work usually spans several repositor
 - **Project actions**: the `⋯` in a project header → new session / move the whole project into a section / archive the project (removes it from the sidebar, does not touch files on disk, asks for confirmation).
 - **Project area bar**: `⌕` filters by project name or session title; `+` picks a directory and registers a new project.
 - **Row marker**: sessions that belong to a section get a section-colored dot at the start of their sidebar row (only while that row is idle).
-- **Row status**: the end of a row tells you whether a session wants your attention — running (a spinner) or finished since you last looked at it (a brand dot) — and gives that cell up to the `⋯` while you hover the row. Opening a session marks it read; the first load baselines every session as read.
+- **Row status**: the end of a row tells you whether a session wants your attention — running (a spinner; its own turn, a subagent it delegated to, or a background job still going all count) or finished since you last looked at it (a brand dot) — and gives that cell up to the `⋯` while you hover the row. Opening a session marks it read; the first load baselines every session as read.
 - **Locales**: follows the host language (built-in en / zh dictionaries).
 
 ### Install
