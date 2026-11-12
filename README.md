@@ -52,6 +52,16 @@ node tools/smoke.mjs       # 冒烟测试：假 DOM + 假 React，渲染每个�
 node tools/audit.mjs       # 审计样式键与词典键：悬空/未用/en-zh 是否对齐
 ```
 
+### 发布
+
+```bash
+npm pack                                   # 产出 local-dsh-section-<版本>.tgz
+cp dist/local-dsh-section-<版本>.tgz dist/dsh-section.tgz
+gh release create v<版本> dist/local-dsh-section-<版本>.tgz dist/dsh-section.tgz
+```
+
+`dist/dsh-section.tgz` 这个名字是刻意的：插件市场条目指向 `releases/latest/download/dsh-section.tgz`，所以每次发版都要附上这个**同名**资产，市场会自动跟到最新版，不必再提市场 PR。
+
 目录结构：
 
 ```
@@ -118,6 +128,16 @@ node --check client.js     # syntax check
 node tools/smoke.mjs       # smoke tests: fake DOM + fake React, renders every entry and asserts interactions
 node tools/audit.mjs       # audits style and dictionary keys for missing, unused and en/zh drift
 ```
+
+### Releasing
+
+```bash
+npm pack                                   # writes local-dsh-section-<version>.tgz
+cp dist/local-dsh-section-<version>.tgz dist/dsh-section.tgz
+gh release create v<version> dist/local-dsh-section-<version>.tgz dist/dsh-section.tgz
+```
+
+The `dist/dsh-section.tgz` name is deliberate: the storefront entry points at `releases/latest/download/dsh-section.tgz`, so every release must attach that same-named asset — the marketplace then follows the newest release and no marketplace PR is needed.
 
 Layout:
 
